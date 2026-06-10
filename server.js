@@ -6,12 +6,20 @@ require('dotenv').config();
 // Initialize the Express app
 const app = express();
 
-// Middleware
-app.use(cors()); 
+// Middleware - Updated CORS to allow your live domains
+app.use(cors({
+    origin: [
+        'http://localhost:5173',           // For local testing (React/Vite default)
+        'https://www.happyyhealinghub.in', // Your live WWW domain
+        'https://happyyhealinghub.in'      // Your live root domain
+    ],
+    credentials: true
+}));
+
 app.use(express.json()); 
 
 // Import Routes
-const bookingRoutes = require('./routes/bookingRoutes'); // <-- Added this
+const bookingRoutes = require('./routes/bookingRoutes'); 
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
@@ -19,7 +27,7 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch((err) => console.error('❌ MongoDB Connection Error:', err));
 
 // Use Routes
-app.use('/api/bookings', bookingRoutes); // <-- Added this
+app.use('/api/bookings', bookingRoutes); 
 
 // A simple test route
 app.get('/', (req, res) => {
