@@ -6,14 +6,15 @@ const Booking = require('../models/Booking');
 // 1. Configure the Hostinger Email Transporter (with Debugging turned ON)
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST || 'smtp.hostinger.com',
-  port: process.env.EMAIL_PORT || 465,
-  secure: true, 
+  port: 587,          // <-- Hardcoded to 587
+  secure: false,      // <-- MUST be false when using port 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  debug: true, // Tells Nodemailer to log every step
-  logger: true // Logs information to the console
+  family: 4, 
+  debug: true, 
+  logger: true 
 });
 
 // 2. Test the connection immediately when the server starts
