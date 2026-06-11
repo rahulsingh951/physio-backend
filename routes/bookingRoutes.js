@@ -1,44 +1,24 @@
 const express = require('express');
 const router = express.Router();
-const nodemailer = require('nodemailer');
 const Booking = require('../models/Booking');
+const sgMail = require('@sendgrid/mail');
 
-// 1. Configure the Hostinger Email Transporter (with Debugging turned ON)
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || 'smtp.hostinger.com',
-  port: 587,          // <-- Hardcoded to 587
-  secure: false,      // <-- MUST be false when using port 587
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  family: 4, 
-  debug: true, 
-  logger: true 
-});
-
-// 2. Test the connection immediately when the server starts
-transporter.verify(function (error, success) {
-  if (error) {
-    console.error("❌ SMTP Connection Error:", error);
-  } else {
-    console.log("✅ Nodemailer successfully connected to Hostinger!");
-  }
-});
+// 1. Initialize SendGrid using your Railway Environment Variable
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 router.post('/new', async (req, res) => {
   try {
-    console.log("📥 Received new booking data from frontend:", req.body); // Shows us what the frontend sent
+    console.log("📥 Received new booking:", req.body);
 
-    // 3. Save the booking
+    // 2. Save the booking to MongoDB
     const newBooking = new Booking(req.body);
     await newBooking.save();
-    console.log("✅ Booking saved to MongoDB.");
+    console.log("✅ Booking saved to database.");
 
-    // 4. Draft the Patient Email
-    const patientMailOptions = {
-      from: process.env.EMAIL_USER, // Kept as pure email string to prevent Hostinger blocking it
+    // 3. Draft Email to the Patient
+    const patientMsg = {
       to: req.body.email, 
+      from: 'appointments@happyyhealinghub.in', // <-- MUST match your verified SendGrid email
       subject: 'Booking Confirmation - Happy Healing Hub',
       html: `
         <h3>Hello ${req.body.name},</h3>
@@ -49,10 +29,10 @@ router.post('/new', async (req, res) => {
       `
     };
 
-    // 5. Draft the Clinic Notification Email
-    const clinicMailOptions = {
-      from: process.env.EMAIL_USER,
-      to: process.env.EMAIL_USER, 
+    // 4. Draft Email Notification to the Clinic (You)
+    const clinicMsg = {
+      to: 'your_actual_email@gmail.com', // <-- Put the email where you want to receive notifications
+      from: 'appointments@happyyhealinghub.in', // <-- MUST match your verified SendGrid email
       subject: `🚨 New Patient Booking: ${req.body.name}`,
       html: `
         <h3>New Booking Received!</h3>
@@ -65,19 +45,27 @@ router.post('/new', async (req, res) => {
       `
     };
 
-    // 6. Send Emails
-    console.log("⏳ Attempting to send patient email...");
-    await transporter.sendMail(patientMailOptions);
-    console.log("✅ Patient email sent.");
+    // 5. Send both emails simultaneously
+    await Promise.all([
+      sgMail.send(patientMsg),
+      sgMail.send(clinicMsg)
+    ]);
+    
+    console.log("✅ Both emails sent successfully via SendGrid.");
 
-    console.log("⏳ Attempting to send clinic notification email...");
-    await transporter.sendMail(clinicMailOptions);
-    console.log("✅ Clinic email sent.");
-
+    // 6. Tell the frontend it was a success
     res.status(201).json({ message: 'Booking saved and emails sent successfully!' });
 
   } catch (error) {
-    console.error("❌ Full Error Details:", error);
+    console.error("❌ SendGrid or Database Error Details:");
+    
+    // SendGrid hides its errors a bit deep, this block exposes exactly what went wrong
+    if (error.response) {
+      console.error(error.response.body);
+    } else {
+      console.error(error);
+    }
+    
     res.status(500).json({ message: 'Internal Server Error', error: error.toString() });
   }
 });
