@@ -3,22 +3,22 @@ const router = express.Router();
 const Booking = require('../models/Booking');
 const sgMail = require('@sendgrid/mail');
 
-// 1. Initialize SendGrid using your Railway Environment Variable
+// Initialize SendGrid using the environment variable
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 router.post('/new', async (req, res) => {
   try {
     console.log("📥 Received new booking:", req.body);
 
-    // 2. Save the booking to MongoDB
+    // 1. Save the booking details to MongoDB
     const newBooking = new Booking(req.body);
     await newBooking.save();
     console.log("✅ Booking saved to database.");
 
-    // 3. Draft Email to the Patient
+    // 2. Draft Confirmation Email to the Patient
     const patientMsg = {
       to: req.body.email, 
-      from: 'dr.sachin@happyyhealinghub.in', // <-- MUST match your verified SendGrid email
+      from: process.env.FROM_EMAIL, // 🔒 Loaded from environment variable
       subject: 'Booking Confirmation - Happy Healing Hub',
       html: `
         <h3>Hello ${req.body.name},</h3>
@@ -29,23 +29,22 @@ router.post('/new', async (req, res) => {
       `
     };
 
-    // 4. Draft Email Notification to the Clinic (You)
+    
     const clinicMsg = {
-      to: 'your_actual_email@gmail.com', // <-- Put the email where you want to receive notifications
-      from: 'appointments@happyyhealinghub.in', // <-- MUST match your verified SendGrid email
-      subject: `🚨 New Patient Booking: ${req.body.name}`,
-      html: `
-        <h3>New Booking Received!</h3>
-        <ul>
-          <li><strong>Name:</strong> ${req.body.name}</li>
-          <li><strong>Email:</strong> ${req.body.email}</li>
-          <li><strong>Phone:</strong> ${req.body.phone}</li>
-          <li><strong>Message:</strong> ${req.body.message || 'N/A'}</li>
-        </ul>
-      `
-    };
+   to: process.env.CLINIC_EMAIL || 'admin@happyyhealinghub.in', 
+  from: process.env.FROM_EMAIL,
+  subject: `🚨 New Patient Booking: ${req.body.name}`,
+  html: `
+    <h3>New Booking Received!</h3>
+    <ul>
+      <li><strong>Name:</strong> ${req.body.name}</li>
+      <li><strong>Email:</strong> ${req.body.email}</li>
+      <li><strong>Phone:</strong> ${req.body.phone}</li>
+    </ul>
+  `
+};
 
-    // 5. Send both emails simultaneously
+    // 4. Send both emails simultaneously
     await Promise.all([
       sgMail.send(patientMsg),
       sgMail.send(clinicMsg)
@@ -53,13 +52,12 @@ router.post('/new', async (req, res) => {
     
     console.log("✅ Both emails sent successfully via SendGrid.");
 
-    // 6. Tell the frontend it was a success
+    // 5. Send success response back to Axios frontend
     res.status(201).json({ message: 'Booking saved and emails sent successfully!' });
 
   } catch (error) {
     console.error("❌ SendGrid or Database Error Details:");
     
-    // SendGrid hides its errors a bit deep, this block exposes exactly what went wrong
     if (error.response) {
       console.error(error.response.body);
     } else {
