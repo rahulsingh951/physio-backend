@@ -1,72 +1,83 @@
 const express = require('express');
 const router = express.Router();
 const nodemailer = require('nodemailer');
-const twilio = require('twilio');
 const Booking = require('../models/Booking');
 
-// Initialize Twilio (Wrapped in try-catch so the app doesn't crash if keys are missing yet)
-let twilioClient;
-try {
-  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-  }
-} catch (error) {
-  console.log("Twilio not configured yet. SMS will be skipped.");
-}
-
-// Set up Email Transporter (Nodemailer)
+// 1. Configure the Hostinger Email Transporter (with Debugging turned ON)
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: process.env.EMAIL_HOST || 'smtp.hostinger.com',
+  port: process.env.EMAIL_PORT || 465,
+  secure: true, 
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    pass: process.env.EMAIL_PASS,
+  },
+  debug: true, // Tells Nodemailer to log every step
+  logger: true // Logs information to the console
+});
+
+// 2. Test the connection immediately when the server starts
+transporter.verify(function (error, success) {
+  if (error) {
+    console.error("❌ SMTP Connection Error:", error);
+  } else {
+    console.log("✅ Nodemailer successfully connected to Hostinger!");
   }
 });
 
-// POST Route: Handle New Bookings
 router.post('/new', async (req, res) => {
   try {
-    const { name, phone, email, date, time } = req.body;
+    console.log("📥 Received new booking data from frontend:", req.body); // Shows us what the frontend sent
 
-    // 1. Save the booking to MongoDB
-    const newBooking = new Booking({ name, phone, email, date, time });
+    // 3. Save the booking
+    const newBooking = new Booking(req.body);
     await newBooking.save();
+    console.log("✅ Booking saved to MongoDB.");
 
-    // 2. Send Email Confirmation (if email credentials exist)
-    if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'PhysioCare Appointment Confirmed',
-        html: `
-          <div style="font-family: Arial, sans-serif; color: #333;">
-            <h2 style="color: #0ea5e9;">Appointment Confirmation</h2>
-            <p>Hello <strong>${name}</strong>,</p>
-            <p>Your appointment is confirmed for <strong>${date}</strong> at <strong>${time}</strong>.</p>
-            <p>If you need to reschedule or have any questions, please contact us.</p>
-            <br/>
-            <p>Best regards,<br/><strong>The Happyy Healing Hub Team</strong></p>
-          </div>
-        `
-      };
-      transporter.sendMail(mailOptions).catch(err => console.log("Email error:", err));
-    }
+    // 4. Draft the Patient Email
+    const patientMailOptions = {
+      from: process.env.EMAIL_USER, // Kept as pure email string to prevent Hostinger blocking it
+      to: req.body.email, 
+      subject: 'Booking Confirmation - Happy Healing Hub',
+      html: `
+        <h3>Hello ${req.body.name},</h3>
+        <p>Thank you for choosing Happy Healing Hub.</p>
+        <p>Your appointment request has been successfully received. We will contact you shortly to confirm the exact time.</p>
+        <br>
+        <p>Warm Regards,<br>The Happy Healing Hub Team</p>
+      `
+    };
 
-    // 3. Send SMS Confirmation (if Twilio is set up)
-    if (twilioClient && process.env.TWILIO_PHONE_NUMBER) {
-      twilioClient.messages.create({
-        body: `Happyy Healing Hub: Hi ${name}, your appointment for ${date} at ${time} is confirmed. See you then!`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: phone
-      }).catch(err => console.log("SMS error:", err));
-    }
+    // 5. Draft the Clinic Notification Email
+    const clinicMailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER, 
+      subject: `🚨 New Patient Booking: ${req.body.name}`,
+      html: `
+        <h3>New Booking Received!</h3>
+        <ul>
+          <li><strong>Name:</strong> ${req.body.name}</li>
+          <li><strong>Email:</strong> ${req.body.email}</li>
+          <li><strong>Phone:</strong> ${req.body.phone}</li>
+          <li><strong>Message:</strong> ${req.body.message || 'N/A'}</li>
+        </ul>
+      `
+    };
 
-    // 4. Send Success Response back to React
-    res.status(201).json({ message: "Booking confirmed successfully", booking: newBooking });
+    // 6. Send Emails
+    console.log("⏳ Attempting to send patient email...");
+    await transporter.sendMail(patientMailOptions);
+    console.log("✅ Patient email sent.");
+
+    console.log("⏳ Attempting to send clinic notification email...");
+    await transporter.sendMail(clinicMailOptions);
+    console.log("✅ Clinic email sent.");
+
+    res.status(201).json({ message: 'Booking saved and emails sent successfully!' });
 
   } catch (error) {
-    console.error("Booking Route Error:", error);
-    res.status(500).json({ message: "Failed to create booking" });
+    console.error("❌ Full Error Details:", error);
+    res.status(500).json({ message: 'Internal Server Error', error: error.toString() });
   }
 });
 
