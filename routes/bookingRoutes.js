@@ -18,7 +18,7 @@ router.post('/new', async (req, res) => {
     // 3. Draft Email to the Patient
     const patientMsg = {
       to: req.body.email, 
-      from: 'appointments@happyyhealinghub.in', // <-- MUST match your verified SendGrid email
+      from: 'dr.sachin@happyyhealinghub.in', // <-- MUST match your verified SendGrid email
       subject: 'Booking Confirmation - Happy Healing Hub',
       html: `
         <h3>Hello ${req.body.name},</h3>
